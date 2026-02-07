@@ -1540,6 +1540,40 @@ class YouTubeChatDownloader(BaseChatDownloader):
 
         else:
             details['status'] = 'past'
+        
+        try:
+            client_continuation = multi_get(
+                yt_initial_data, 'contents', 'twoColumnWatchNextResults', 'conversationBar',
+                'liveChatRenderer', 'continuations', 0, 'reloadContinuationData', 'continuation')
+            if not client_continuation:
+                return details, player_response_info, yt_initial_data, ytcfg
+
+            api_type = 'live_chat' if details['status'] != 'past' else 'live_chat_replay'
+            response = self._session_get(
+                f'https://www.youtube.com/{api_type}?continuation={client_continuation}')
+
+            yt = regex_search(response.text, self._YT_INITIAL_DATA_RE)
+            live_chat_data = try_parse_json(yt)
+
+            continuations = multi_get(
+                live_chat_data, 'continuationContents', 'liveChatContinuation', 'header',
+                'liveChatHeaderRenderer', 'viewSelector', 'sortFilterSubMenuRenderer',
+                'subMenuItems') or []
+
+            if len(continuations) >= 2:
+                top_continuation = multi_get(
+                    continuations, 0, 'continuation', 'reloadContinuationData', 'continuation')
+                live_continuation = multi_get(
+                    continuations, 1, 'continuation', 'reloadContinuationData', 'continuation')
+
+                if top_continuation and live_continuation:
+                    suffix = '' if details['status'] != 'past' else ' replay'
+                    details['continuation_info'].update({
+                        f'Top chat{suffix}': top_continuation,
+                        f'Live chat{suffix}': live_continuation,
+                    })
+        except Exception:
+            pass
 
         return details, player_response_info, yt_initial_data, ytcfg
 
